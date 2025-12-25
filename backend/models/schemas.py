@@ -20,9 +20,12 @@ class QueryResponse(BaseModel):
 
 class EvalTestCase(BaseModel):
     """Single evaluation test case."""
+    name: Optional[str] = None
     question: str
     expected_sql: Optional[str] = None
     expected_result: Optional[dict] = None
+    should_pass: bool = True
+    expected_error_contains: Optional[list[str]] = None
 
 
 class EvalRequest(BaseModel):
@@ -33,6 +36,7 @@ class EvalRequest(BaseModel):
 class EvalResult(BaseModel):
     """Result for a single evaluation test case."""
     question: str
+    name: Optional[str] = None
     expected_sql: Optional[str] = None
     status: str
     actual_sql: Optional[str] = None

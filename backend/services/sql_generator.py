@@ -11,6 +11,7 @@ from core.config import ConfigurationError, get_env, require_env
 from core.exceptions import SQLGenerationError
 from security.schema import COLUMNS, NUMERIC_COLUMNS, TABLE
 from security.sql_guard import sql_grammar, validate_sql
+from utils.query_validation import validate_query_input
 
 logger = logging.getLogger(__name__)
 
@@ -26,46 +27,55 @@ TOOL_NAME = "sql_query"
 COLUMN_LIST = ", ".join(COLUMNS)
 NUMERIC_COLUMN_LIST = ", ".join(NUMERIC_COLUMNS)
 
-SYSTEM_INSTRUCTIONS = (
-    f"You generate ClickHouse SQL queries for the Bitcoin cryptocurrency dataset. "
-    f"The table is '{TABLE}' with columns: {COLUMN_LIST}. "
-    f"\n\n"
-    f"Column details (all lowercase):\n"
-    f"- date: DateTime timestamp of the data point (data range: 2013-04-29 to 2021-07-06)\n"
-    f"- close, high, low, open: Price values (Float)\n"
-    f"- volume: Trading volume (Float)\n"
-    f"- marketcap: Market capitalization (Float)\n"
-    f"\n"
-    f"IMPORTANT: Data is from 2013-2021, so 'now() - INTERVAL' queries will return empty results.\n"
-    f"Use date ranges like 'date BETWEEN \\'YYYY-MM-DD\\' AND \\'YYYY-MM-DD\\'' instead.\n"
-    f"\n"
-    f"Rules:\n"
-    f"1. Use a single SELECT statement that matches the provided grammar exactly.\n"
-    f"2. Numeric columns ({NUMERIC_COLUMN_LIST}) can be aggregated with SUM, AVG, MIN, MAX.\n"
-    f"3. Use COUNT(*) to count all rows, or COUNT(column) to count non-null values.\n"
-    f"4. ALL queries MUST include a time window filter on the date column using:\n"
-    f"   - date >= now() - INTERVAL N HOUR (for last N hours - note: data ends in 2021)\n"
-    f"   - date >= now() - INTERVAL N DAY (for last N days - note: data ends in 2021)\n"
-    f"   - date BETWEEN 'YYYY-MM-DD' AND 'YYYY-MM-DD' (for date ranges - RECOMMENDED)\n"
-    f"5. Optional: Use GROUP BY with toStartOfDay(date) or toStartOfHour(date) for time-based grouping.\n"
-    f"6. Use exact column names as shown - ALL COLUMN NAMES MUST BE LOWERCASE: date, close, high, low, open, volume, marketcap.\n"
-    f"   Do NOT use uppercase like Date, Close, etc. - use lowercase only.\n"
-    f"7. Return only the SQL query, no explanations or markdown formatting.\n"
-)
+SYSTEM_INSTRUCTIONS = f"""
+    You generate ClickHouse SQL queries for the Bitcoin cryptocurrency dataset. 
+    The table is '{TABLE}' with columns: {COLUMN_LIST}. 
+
+    Column details (all lowercase):
+    - date: DateTime timestamp of the data point (data range: 2013-04-29 to 2021-07-06)
+    - close, high, low, open: Price values (Float)
+    - volume: Trading volume (Float)
+    - marketcap: Market capitalization (Float)
+
+    IMPORTANT: Data is from 2013-2021, so 'now() - INTERVAL' queries will return empty results.
+    Use date ranges like 'date BETWEEN \\'YYYY-MM-DD\\' AND \\'YYYY-MM-DD\\'' instead.
+
+    SECURITY RULES (CRITICAL):
+    - ONLY generate SELECT queries. NEVER generate DROP, DELETE, UPDATE, INSERT, or any other operation.
+    - ONLY query the '{TABLE}' table. Do NOT query other tables.
+    - Do NOT generate queries with JOIN, UNION, or subqueries.
+    - If the user asks for anything other than SELECT queries on '{TABLE}', you MUST reject it.
+    - If the query contains suspicious patterns (DROP, DELETE, etc.), reject it immediately.
+
+    Rules:
+    1. Use a single SELECT statement that matches the provided grammar exactly.
+    2. Numeric columns ({NUMERIC_COLUMN_LIST}) can be aggregated with SUM, AVG, MIN, MAX.
+    3. Use COUNT(*) to count all rows, or COUNT(column) to count non-null values.
+    4. ALL queries MUST include a time window filter on the date column using:
+    - date >= now() - INTERVAL N HOUR (for last N hours - note: data ends in 2021)
+    - date >= now() - INTERVAL N DAY (for last N days - note: data ends in 2021)
+    - date BETWEEN 'YYYY-MM-DD' AND 'YYYY-MM-DD' (for date ranges - RECOMMENDED)
+    5. Optional: Use GROUP BY with toStartOfDay(date) or toStartOfHour(date) for time-based grouping.
+    6. Use exact column names as shown - ALL COLUMN NAMES MUST BE LOWERCASE: date, close, high, low, open, volume, marketcap.
+    Do NOT use uppercase like Date, Close, etc. - use lowercase only.
+    7. Return only the SQL query, no explanations or markdown formatting.
+    8. If a query is suspicious or cannot be safely converted to a SELECT query on '{TABLE}', 
+       generate SQL that will fail validation (e.g., use an invalid column name) so it gets rejected.
+"""
 
 
 class SQLGenerator:
     """
     Generates SQL queries using OpenAI GPT-5 with CFG constraints.
-    
+
     The generated SQL is guaranteed to match the grammar defined in sql_guard.py,
     ensuring security and correctness.
     """
-    
+
     def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None):
         """
         Initialize the SQL generator.
-        
+
         Args:
             api_key: OpenAI API key (defaults to OPENAI_API_KEY env var)
             model: Model name (defaults to OPENAI_MODEL env var or DEFAULT_MODEL)
@@ -77,18 +87,18 @@ class SQLGenerator:
         )
         self.model = model or get_env(MODEL_ENV, DEFAULT_MODEL)
         self._client: Optional[OpenAI] = None
-    
+
     @property
     def client(self) -> OpenAI:
         """Lazy initialization of OpenAI client."""
         if self._client is None:
             self._client = OpenAI(api_key=self.api_key)
         return self._client
-    
+
     def _create_tool_definition(self) -> dict:
         """
         Create the CFG-constrained tool definition for GPT-5.
-        
+
         Returns:
             Tool definition dictionary with grammar constraint
         """
@@ -105,24 +115,24 @@ class SQLGenerator:
                 "definition": sql_grammar(),
             },
         }
-    
+
     def _extract_sql_from_response(self, response) -> str:
         """
         Extract SQL from GPT-5 response.
-        
+
         Args:
             response: OpenAI response object
-            
+
         Returns:
             Generated SQL query string
-            
+
         Raises:
             SQLGenerationError: If no valid SQL is found in the response
         """
         # Look for custom tool call in the response output
         if not hasattr(response, "output"):
             raise SQLGenerationError("Response missing 'output' attribute")
-        
+
         for item in response.output:
             if (
                 getattr(item, "type", None) == "custom_tool_call"
@@ -131,21 +141,21 @@ class SQLGenerator:
                 sql = getattr(item, "input", None)
                 if sql:
                     return sql.strip()
-        
+
         raise SQLGenerationError(
             f"No valid SQL found in response. Expected custom_tool_call with name '{TOOL_NAME}'"
         )
-    
+
     def generate(self, prompt: str) -> str:
         """
         Generate SQL query from natural language prompt.
-        
+
         Args:
             prompt: Natural language query (e.g., "sum the total volume in the last 30 hours")
-            
+
         Returns:
             Validated SQL query string
-            
+
         Raises:
             ValueError: If prompt is empty
             SQLGenerationError: If generation fails
@@ -154,12 +164,15 @@ class SQLGenerator:
         prompt = prompt.strip()
         if not prompt:
             raise ValueError("Prompt cannot be empty")
-        
+
+        # Pre-validate query for suspicious patterns
+        validate_query_input(prompt)
+
         logger.info(
             "Generating SQL from prompt",
             extra={"model": self.model, "prompt_length": len(prompt)}
         )
-        
+
         try:
             response = self.client.responses.create(
                 model=self.model,
@@ -172,15 +185,18 @@ class SQLGenerator:
                 max_output_tokens=512,  # SQL queries should be concise
             )
         except Exception as e:
-            logger.exception("OpenAI API call failed", extra={"model": self.model})
-            raise SQLGenerationError(f"Failed to generate SQL: {str(e)}") from e
-        
+            logger.exception("OpenAI API call failed",
+                             extra={"model": self.model})
+            raise SQLGenerationError(
+                f"Failed to generate SQL: {str(e)}") from e
+
         try:
             sql = self._extract_sql_from_response(response)
         except SQLGenerationError:
-            logger.error("Failed to extract SQL from response", extra={"model": self.model})
+            logger.error("Failed to extract SQL from response",
+                         extra={"model": self.model})
             raise
-        
+
         # Validate the generated SQL against the grammar
         try:
             validate_sql(sql)
@@ -189,13 +205,14 @@ class SQLGenerator:
                 "Generated SQL failed validation",
                 extra={"model": self.model, "sql": sql, "error": str(e)}
             )
-            raise ValueError(f"Generated SQL does not match grammar: {e}") from e
-        
+            raise ValueError(
+                f"Generated SQL does not match grammar: {e}") from e
+
         logger.info(
             "Successfully generated and validated SQL",
             extra={"model": self.model, "sql_length": len(sql)}
         )
-        
+
         return sql
 
 
@@ -203,17 +220,16 @@ class SQLGenerator:
 def generate_sql(prompt: str, api_key: Optional[str] = None, model: Optional[str] = None) -> str:
     """
     Generate SQL from a natural language prompt.
-    
+
     Convenience function that creates a SQLGenerator instance and generates SQL.
-    
+
     Args:
         prompt: Natural language query
         api_key: Optional OpenAI API key (defaults to env var)
         model: Optional model name (defaults to env var or DEFAULT_MODEL)
-        
+
     Returns:
         Validated SQL query string
     """
     generator = SQLGenerator(api_key=api_key, model=model)
     return generator.generate(prompt)
-
