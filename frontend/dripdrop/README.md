@@ -55,13 +55,3 @@ npm start
 2. **View Results**: See the generated SQL, any warnings, and the query results in formatted tables
 3. **Run Evals**: Click "Run Evals" to execute all evaluation test cases and see pass/fail results
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-1. Push your code to GitHub
-2. Import the project in Vercel
-3. Set the `NEXT_PUBLIC_API_URL` environment variable to your deployed backend URL
-4. Deploy!
-
-Check out the [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
