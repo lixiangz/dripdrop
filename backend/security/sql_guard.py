@@ -92,9 +92,11 @@ condition: time_filter (AND time_filter)*
 
 time_filter: date_interval_filter
            | date_between_filter
+           | date_equals_filter
 
 date_interval_filter: DATE ">=" NOW "(" ")" "-" INTERVAL INT interval_unit
 date_between_filter: DATE BETWEEN string_literal AND string_literal
+date_equals_filter: DATE "=" string_literal
 
 interval_unit: HOUR
              | DAY

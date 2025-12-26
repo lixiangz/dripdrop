@@ -3,6 +3,7 @@ SQL generation using OpenAI GPT-5 with Context-Free Grammar (CFG) constraints.
 Generates SQL queries that match the exact grammar defined in sql_guard.py.
 """
 import logging
+import re
 from typing import Optional
 
 from openai import OpenAI
@@ -146,6 +147,55 @@ class SQLGenerator:
             f"No valid SQL found in response. Expected custom_tool_call with name '{TOOL_NAME}'"
         )
 
+    
+
+    def _normalize_date_filters(self, sql: str) -> str:
+        """
+        Normalize date filters in SQL query.
+        Converts 'date BETWEEN 'YYYY-MM-DD' AND 'YYYY-MM-DD'' to a BETWEEN clause
+        that covers the entire day with explicit time components, since the date
+        column is DateTime with time components.
+
+        Args:
+            sql: SQL query string
+
+        Returns:
+            Normalized SQL query string
+        """
+        # Pattern to match: date BETWEEN 'YYYY-MM-DD' AND 'YYYY-MM-DD'
+        # Case-insensitive matching for 'date' and 'BETWEEN'
+        pattern = r"date\s+BETWEEN\s+(['\"])(\d{4}-\d{2}-\d{2})\1\s+AND\s+\1(\d{4}-\d{2}-\d{2})\1"
+
+        def replace_between(match):
+            quote_char = match.group(1)
+            start_date = match.group(2)
+            end_date = match.group(3)
+
+            # If both dates are the same, convert to a BETWEEN clause that covers the entire day
+            # This handles DateTime columns that have time components (e.g., '2016-11-16 23:59:59')
+            if start_date == end_date:
+                return f"date BETWEEN {quote_char}{start_date} 00:00:00{quote_char} AND {quote_char}{end_date} 23:59:59{quote_char}"
+            # Otherwise, keep the BETWEEN clause as is
+            return match.group(0)
+
+        # Replace all occurrences
+        normalized_sql = re.sub(pattern, replace_between,
+                                sql, flags=re.IGNORECASE)
+
+        # Also handle date = 'YYYY-MM-DD' patterns (in case they appear directly)
+        # Convert to BETWEEN clause covering the full day
+        equals_pattern = r"date\s*=\s+(['\"])(\d{4}-\d{2}-\d{2})\1"
+
+        def replace_equals(match):
+            quote_char = match.group(1)
+            date_value = match.group(2)
+            return f"date BETWEEN {quote_char}{date_value} 00:00:00{quote_char} AND {quote_char}{date_value} 23:59:59{quote_char}"
+
+        normalized_sql = re.sub(equals_pattern, replace_equals,
+                                normalized_sql, flags=re.IGNORECASE)
+
+        return normalized_sql
+
     def generate(self, prompt: str) -> str:
         """
         Generate SQL query from natural language prompt.
@@ -196,6 +246,9 @@ class SQLGenerator:
             logger.error("Failed to extract SQL from response",
                          extra={"model": self.model})
             raise
+
+        # Normalize date filters (convert BETWEEN same_date to equality)
+        sql = self._normalize_date_filters(sql)
 
         # Validate the generated SQL against the grammar
         try:

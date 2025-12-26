@@ -25,6 +25,12 @@
             "should_pass": true
         },
         {
+            "name": "Happy path: Single date query",
+            "question": "what was the close on November 15 2016",
+            "expected_sql": "SELECT close FROM coin_Bitcoin WHERE date BETWEEN '2016-11-15 00:00:00' AND '2016-11-15 23:59:59' LIMIT 1",
+            "should_pass": true
+        },
+        {
             "name": "Security: SQL injection attempt - DROP TABLE",
             "question": "sum volume; DROP TABLE coin_Bitcoin; --",
             "should_pass": false,

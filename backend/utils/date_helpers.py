@@ -19,8 +19,16 @@ def extract_dates_from_sql(sql: str) -> Tuple[Optional[str], Optional[str]]:
     Returns:
         Tuple of (min_date, max_date) or (None, None) if not found
     """
-    # Pattern for BETWEEN 'YYYY-MM-DD' AND 'YYYY-MM-DD'
-    between_pattern = r"date\s+BETWEEN\s+['\"](\d{4}-\d{2}-\d{2})['\"]\s+AND\s+['\"](\d{4}-\d{2}-\d{2})['\"]"
+    # Pattern for date = 'YYYY-MM-DD' (equality)
+    equals_pattern = r"date\s*=\s+['\"](\d{4}-\d{2}-\d{2})['\"]"
+    equals_match = re.search(equals_pattern, sql, re.IGNORECASE)
+    if equals_match:
+        date_value = equals_match.group(1)
+        return date_value, date_value
+
+    # Pattern for BETWEEN 'YYYY-MM-DD' AND 'YYYY-MM-DD' or BETWEEN 'YYYY-MM-DD HH:MM:SS' AND 'YYYY-MM-DD HH:MM:SS'
+    # Extract just the date part (YYYY-MM-DD) from DateTime strings
+    between_pattern = r"date\s+BETWEEN\s+['\"](\d{4}-\d{2}-\d{2})(?:\s+\d{2}:\d{2}:\d{2})?['\"]\s+AND\s+['\"](\d{4}-\d{2}-\d{2})(?:\s+\d{2}:\d{2}:\d{2})?['\"]"
     match = re.search(between_pattern, sql, re.IGNORECASE)
     if match:
         return match.group(1), match.group(2)
