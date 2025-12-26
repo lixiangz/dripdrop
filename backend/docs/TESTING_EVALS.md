@@ -13,25 +13,18 @@ python -m tests.run_cfg_evals
 
 ## Endpoint
 
-**POST** `/evals/run`
+**GET** `/evals/run`
 
 ## Request Format
 
-```json
-{
-    "test_cases": [
-        {
-            "name": "Test name (optional)",
-            "question": "natural language query",
-            "expected_sql": "optional expected SQL",
-            "should_pass": true,
-            "expected_error_contains": ["error", "keywords"]
-        }
-    ]
-}
-```
+No request body required. The endpoint automatically loads test cases from `cfg_evals.json`.
 
-**Fields:**
+The test cases include:
+
+-   Functional tests (happy path scenarios)
+-   Security tests (SQL injection attempts, forbidden operations)
+
+**Test Case Fields:**
 
 -   `question` (required) - Natural language query
 -   `should_pass` (default: `true`) - `false` for security tests
@@ -66,17 +59,15 @@ python -m tests.run_cfg_evals
 
 ## Example Test Cases
 
+Test cases are defined in `backend/tests/cfg_evals.json`. Examples include:
+
 ### Functional Test
 
 ```json
 {
-    "test_cases": [
-        {
-            "name": "SUM aggregation",
-            "question": "sum volume from 2020 to 2021",
-            "should_pass": true
-        }
-    ]
+    "name": "Happy path: SUM aggregation",
+    "question": "sum the total marketcap in the last 30 hours",
+    "should_pass": true
 }
 ```
 
@@ -84,14 +75,10 @@ python -m tests.run_cfg_evals
 
 ```json
 {
-    "test_cases": [
-        {
-            "name": "SQL injection attempt",
-            "question": "sum volume; DROP TABLE coin_Bitcoin; --",
-            "should_pass": false,
-            "expected_error_contains": ["DROP", "Security violation"]
-        }
-    ]
+    "name": "Security: SQL injection attempt - DROP TABLE",
+    "question": "sum volume; DROP TABLE coin_Bitcoin; --",
+    "should_pass": false,
+    "expected_error_contains": ["DROP", "Security violation", "injection"]
 }
 ```
 
@@ -100,9 +87,7 @@ python -m tests.run_cfg_evals
 ### cURL
 
 ```bash
-curl -X POST http://localhost:8000/evals/run \
-  -H "Content-Type: application/json" \
-  -d '{"test_cases": [{"question": "average close in 2020"}]}'
+curl -X GET http://localhost:8000/evals/run
 ```
 
 ### Python
@@ -110,10 +95,7 @@ curl -X POST http://localhost:8000/evals/run \
 ```python
 import requests
 
-response = requests.post(
-    "http://localhost:8000/evals/run",
-    json={"test_cases": [{"question": "average close in 2020"}]}
-)
+response = requests.get("http://localhost:8000/evals/run")
 print(response.json())
 ```
 

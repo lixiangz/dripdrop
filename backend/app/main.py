@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from api import health, query, evals, test
+from core.config import get_env
 
 # Configure logging (only when this module is imported, not on package import)
 logging.basicConfig(level=logging.INFO)
@@ -31,12 +32,16 @@ def create_app() -> FastAPI:
     )
 
     # Add CORS support for Vercel frontend
+    cors_origins_env = get_env("CORS_ORIGINS", "http://localhost:3000")
+    cors_origins = [origin.strip() for origin in cors_origins_env.split(",")]
+
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],  # In production, replace with your Vercel domain
+        allow_origins=cors_origins,
         allow_credentials=True,
-        allow_methods=["*"],
+        allow_methods=["GET", "POST", "OPTIONS"],
         allow_headers=["*"],
+        expose_headers=["*"],
     )
 
     # Register routes with tags
@@ -48,5 +53,4 @@ def create_app() -> FastAPI:
     return app
 
 
-# Create app instance (only when this module is imported for running the server)
 app = create_app()
