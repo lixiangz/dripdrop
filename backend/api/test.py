@@ -1,13 +1,15 @@
 """
 Test endpoint for database connection verification.
+This is for testing and debugging purposes, not used in production.
 """
 import logging
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 
 from db.client import DatabaseClient
 from utils.data_helpers import sanitize_data_for_json
 from app.dependencies import get_database
+from app.rate_limiter import limiter
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +17,11 @@ router = APIRouter()
 
 
 @router.get("/test/hardcoded")
-def test_hardcoded(db: DatabaseClient = Depends(get_database)):
+@limiter.limit("10/minute")
+def test_hardcoded(
+    request: Request,
+    db: DatabaseClient = Depends(get_database),
+):
     """
     Test endpoint to verify database connection with a hardcoded SQL query.
     This bypasses SQL generation and validation to test the Tinybird connection directly.
@@ -79,4 +85,3 @@ def test_hardcoded(db: DatabaseClient = Depends(get_database)):
             "message": f"Database test failed: {str(e)}",
             "results": results if results else {}
         }
-

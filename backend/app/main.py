@@ -6,8 +6,11 @@ import logging
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
 from api import health, query, evals, test
+from app.rate_limiter import limiter
 from core.config import get_env
 
 # Configure logging (only when this module is imported, not on package import)
@@ -30,6 +33,10 @@ def create_app() -> FastAPI:
         description="Natural language to SQL query API with CFG constraints",
         version="1.0.0",
     )
+
+    # Add rate limiting
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
     # Add CORS support for Vercel frontend
     cors_origins_env = get_env("CORS_ORIGINS", "http://localhost:3000")

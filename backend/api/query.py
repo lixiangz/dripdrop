@@ -3,7 +3,7 @@ Query endpoint for natural language to SQL conversion.
 """
 import logging
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
 
 from core.constants import MAX_QUESTION_LENGTH
 from core.exceptions import DateRangeError, QueryExecutionError, SQLGenerationError
@@ -12,6 +12,7 @@ from models.schemas import QueryRequest, QueryResponse
 from services.query_service import QueryService
 from services.sql_generator import SQLGenerator
 from app.dependencies import get_database, get_generator
+from app.rate_limiter import limiter
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +20,9 @@ router = APIRouter()
 
 
 @router.post("/query", response_model=QueryResponse)
+@limiter.limit("10/minute")
 def query(
+    request: Request,
     body: QueryRequest,
     db: DatabaseClient = Depends(get_database),
     generator: SQLGenerator = Depends(get_generator),

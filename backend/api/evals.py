@@ -5,13 +5,14 @@ import json
 import logging
 from pathlib import Path
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 
 from db.client import DatabaseClient
 from models.schemas import EvalResponse, EvalTestCase
 from services.eval_service import EvalService
 from services.sql_generator import SQLGenerator
 from app.dependencies import get_database, get_generator
+from app.rate_limiter import limiter
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +39,9 @@ def _load_default_test_cases() -> list[EvalTestCase]:
 
 
 @router.get("/evals/run", response_model=EvalResponse)
+@limiter.limit("10/minute")
 def run_evals(
+    request: Request,
     db: DatabaseClient = Depends(get_database),
     generator: SQLGenerator = Depends(get_generator),
 ):
